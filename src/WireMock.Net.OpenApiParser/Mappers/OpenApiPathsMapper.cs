@@ -76,7 +76,7 @@ namespace WireMock.Net.OpenApiParser.Mappers
                                    requestBodySchemaExample != null ? MapOpenApiAnyToJToken(requestBodySchemaExample) :
                                    MapSchemaToObject(requestBodySchema);
 
-                requestBodyModel = MapRequestBody(requestBodyMapped);
+                requestBodyModel = MapRequestBody(requestBodyMapped, requestBodyExample ?? requestBodySchemaExample);
             }
 
             if (!int.TryParse(response.Key, out var httpStatusCode))
@@ -104,22 +104,36 @@ namespace WireMock.Net.OpenApiParser.Mappers
             };
         }
 
-        private BodyModel MapRequestBody(object requestBody)
+        private BodyModel MapRequestBody(object requestBody, IOpenApiAny any)
         {
             if (requestBody == null)
             {
                 return null;
             }
-
-            return new BodyModel
+            if (any != null && (any.AnyType == AnyType.Primitive || any.AnyType == AnyType.Null))
             {
-                Matcher = new MatcherModel
+                return new BodyModel
                 {
-                    Name = "JsonMatcher",
-                    Pattern = JsonConvert.SerializeObject(requestBody, Formatting.Indented),
-                    IgnoreCase = _settings.RequestBodyIgnoreCase
-                }
-            };
+                    Matcher = new MatcherModel
+                    {
+                        Name = "ExactMatcher",
+                        Pattern = requestBody.ToString(),
+                        IgnoreCase = _settings.RequestBodyIgnoreCase
+                    }
+                };
+            }
+            else
+            {
+                return new BodyModel
+                {
+                    Matcher = new MatcherModel
+                    {
+                        Name = "JsonMatcher",
+                        Pattern = JsonConvert.SerializeObject(requestBody, Formatting.Indented),
+                        IgnoreCase = _settings.RequestBodyIgnoreCase
+                    }
+                };
+            }
         }
 
         private bool TryGetContent(IDictionary<string, OpenApiMediaType> contents, out OpenApiMediaType openApiMediaType, out string contentType)
@@ -299,13 +313,14 @@ namespace WireMock.Net.OpenApiParser.Mappers
             var writer = new OpenApiJsonWriter(outputString);
             any.Write(writer, OpenApiSpecVersion.OpenApi3_0);
 
-            if (any.AnyType == AnyType.Array)
+            switch (any.AnyType)
             {
-                return JArray.Parse(outputString.ToString());
-            }
-            else
-            {
-                return JObject.Parse(outputString.ToString());
+                case AnyType.Array:
+                    return JArray.Parse(outputString.ToString());
+                case AnyType.Object:
+                    return JObject.Parse(outputString.ToString());
+                default:                    
+                    return outputString.ToString();
             }
         }
 
